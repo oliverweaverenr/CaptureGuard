@@ -1,7 +1,8 @@
-//! 枚举"拥有可见顶层窗口"的进程，供 GUI 列表展示。
+//! Enumerate processes that own visible top-level windows for the GUI list.
 //!
-//! 做法：EnumWindows 遍历所有顶层窗口，过滤出可见、有标题、非工具窗口的，
-//! 用 GetWindowThreadProcessId 归到 PID，再按 PID 去重、补进程名。
+//! EnumWindows collects visible, titled, non-tool top-level windows. The window
+//! owner PID is resolved with GetWindowThreadProcessId, then process names are
+//! filled through a ToolHelp snapshot.
 
 use std::collections::BTreeMap;
 
@@ -15,31 +16,34 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
 };
 
-/// 一个可注入的进程条目。
+/// A process entry that can be selected for injection.
 #[derive(Clone)]
 pub struct ProcEntry {
     pub pid: u32,
     pub name: String,
-    /// 代表性窗口标题（取第一个找到的主窗口）。
+    /// Representative window title, from the first discovered main window.
     pub title: String,
 }
 
-/// 返回所有"拥有可见主窗口"的进程，按进程名排序。
+/// Return all processes that own visible main windows, sorted by process name.
 pub fn list_windowed_processes() -> Vec<ProcEntry> {
-    // 先收集 pid -> 窗口标题。
+    // Collect pid -> window title first.
     let mut map: BTreeMap<u32, String> = BTreeMap::new();
     let map_ptr = &mut map as *mut BTreeMap<u32, String>;
     unsafe {
         let _ = EnumWindows(Some(enum_proc), LPARAM(map_ptr as isize));
     }
 
-    // 补进程名。
+    // Fill process names.
     let names = process_names();
     let mut out: Vec<ProcEntry> = map
         .into_iter()
         .map(|(pid, title)| ProcEntry {
             pid,
-            name: names.get(&pid).cloned().unwrap_or_else(|| "<未知>".into()),
+            name: names
+                .get(&pid)
+                .cloned()
+                .unwrap_or_else(|| "<unknown>".into()),
             title,
         })
         .collect();
@@ -47,24 +51,24 @@ pub fn list_windowed_processes() -> Vec<ProcEntry> {
     out
 }
 
-/// EnumWindows 回调：筛选主窗口并记录 pid -> 标题。
+/// EnumWindows callback: select main windows and record pid -> title.
 unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let map = &mut *(lparam.0 as *mut BTreeMap<u32, String>);
 
-    // 只要可见窗口。
+    // Only visible windows.
     if !IsWindowVisible(hwnd).as_bool() {
         return BOOL(1);
     }
-    // 跳过工具窗口（多为悬浮/辅助，不是主界面）。
+    // Skip tool windows, usually floating/auxiliary surfaces.
     let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
     if ex & WS_EX_TOOLWINDOW.0 != 0 {
         return BOOL(1);
     }
-    // 只要顶层窗口（无 owner），过滤对话框/弹窗。
+    // Only unowned top-level windows; filter dialogs/popups.
     if !GetWindow(hwnd, GW_OWNER).unwrap_or_default().is_invalid() {
         return BOOL(1);
     }
-    // 必须有标题。
+    // Require a title.
     let len = GetWindowTextLengthW(hwnd);
     if len <= 0 {
         return BOOL(1);
@@ -82,12 +86,12 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         return BOOL(1);
     }
 
-    // 每个 pid 只记第一个窗口标题。
+    // Keep the first title per pid.
     map.entry(pid).or_insert(title);
     BOOL(1)
 }
 
-/// 快照所有进程，返回 pid -> 进程名。
+/// Snapshot all processes and return pid -> process name.
 fn process_names() -> BTreeMap<u32, String> {
     let mut names = BTreeMap::new();
     unsafe {

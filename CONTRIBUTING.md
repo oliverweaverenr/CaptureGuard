@@ -1,28 +1,29 @@
-# 贡献指南
+# Contributing
 
-感谢你愿意参与 CaptureGuard。这个项目涉及 Windows 原生 API、DLL 注入和窗口防护，
-贡献时请同时关注代码质量、用户安全和负责任使用边界。
+Thanks for your interest in CaptureGuard. This project touches Windows native
+APIs, DLL injection, and capture protection, so contributions need to account
+for code quality, user safety, and responsible-use boundaries.
 
 
-## 开发环境
+## Development Environment
 
-推荐环境：
+Recommended environment:
 
 - Windows 10/11 x64
 - Rust stable
 - `x86_64-pc-windows-msvc` target
-- Visual Studio Build Tools 或 Visual Studio 的 MSVC 工具链
+- Visual Studio Build Tools or Visual Studio with MSVC
 
-安装 Rust target：
+Install the Rust target:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
 ```
 
 
-## 本地验证
+## Local Checks
 
-提交前请至少运行：
+Before submitting changes, run:
 
 ```powershell
 cargo fmt --all -- --check
@@ -30,31 +31,35 @@ cargo clippy --all-targets -- -D warnings
 cargo build --release --bin capture-guard
 ```
 
-如果修改了注入、卸载或窗口枚举逻辑，请补充手动验证结果：
+If you change injection, unload, or window-enumeration behavior, include manual
+test notes:
 
-- 目标进程名称和位数。
-- 是否以管理员权限运行。
-- 开启防护后截图/录屏是否排除窗口。
-- 关闭 GUI 后防护是否仍持续。
-- 重新打开 GUI 后是否能识别并解除防护。
-
-
-## Pull Request 要求
-
-- 保持改动聚焦，一个 PR 解决一个明确问题。
-- 不提交构建产物、日志、临时文件或本地 IDE 配置。
-- 涉及用户可见行为时，同步更新 README 或 `docs/`。
-- 涉及发布流程时，同步更新 `docs/release.md`。
-- 对风险较高的改动，在 PR 描述中说明影响范围和回滚方式。
+- Target process name and bitness.
+- Whether CaptureGuard was run as administrator.
+- Whether screenshots/recordings exclude the protected window.
+- Whether protection remains active after closing the GUI.
+- Whether reopening the GUI detects and disables protection correctly.
 
 
-## 不接受的贡献类型
+## Pull Requests
 
-项目不会接受以下能力或文档：
+- Keep changes focused. One PR should solve one clear problem.
+- Do not commit build artifacts, logs, temporary files, or local IDE settings.
+- Update README or `docs/` for user-visible behavior changes.
+- Update `docs/release.md` for release-flow changes.
+- For high-risk changes, describe impact and rollback steps in the PR.
 
-- 绕过安全软件、EDR、DRM、监考系统或企业监控。
-- 隐蔽持久化、提权、反取证或规避审计。
-- 默认注入敏感系统进程或第三方受保护进程。
-- 面向滥用场景的教程、脚本或配置。
 
-如果你不确定某个改动是否合适，请先开 issue 说明背景和预期用途。
+## Out Of Scope
+
+The project will not accept contributions that add or document:
+
+- Bypassing security software, EDR, DRM, exam monitoring, or workplace
+  monitoring.
+- Stealth persistence, privilege escalation, anti-forensics, or audit evasion.
+- Default injection into sensitive system processes or protected third-party
+  products.
+- Abuse-oriented tutorials, scripts, or configuration.
+
+If you are unsure whether a change fits the project, open an issue first and
+describe the intended use case.

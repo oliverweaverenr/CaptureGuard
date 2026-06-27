@@ -1,9 +1,9 @@
-//! 注入 / 解除 / 状态检测。
+//! Injection, unprotect, and status checks.
 //!
-//! - inject: 经典 LoadLibraryW 远程线程注入。
-//! - is_protected: 尝试打开 `Local\CaptureGuardUnload_<PID>` 事件，打得开说明
-//!   该进程已被注入（DLL 正在运行并持有该事件）。
-//! - request_unprotect: 打开同名事件并 SetEvent，DLL 收到后自还原 + 自卸载。
+//! - inject: classic LoadLibraryW remote-thread injection.
+//! - is_protected: opens `Local\CaptureGuardUnload_<PID>`; success means the DLL
+//!   is running in the target process and owns the event.
+//! - request_unprotect: signals the event so the DLL restores windows and unloads.
 
 use std::path::Path;
 
@@ -23,8 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WDA_EXCLUDEFROMCAPTURE,
 };
 
-/// 拼出某 PID 的卸载事件名。前缀必须与 protect-dll 端一致，
-/// 用 obfstr 混淆避免明文暴露（明文事件名 = 任何人都能解除防护）。
+/// Build the unload event name for a PID. The prefix must match protect-dll.
+/// obfstr avoids exposing the plain event name in the binary.
 fn event_name(pid: u32) -> Vec<u16> {
     format!("{}{pid}", obfstr::obfstr!(r"Local\CaptureGuardUnload_"))
         .encode_utf16()
@@ -32,7 +32,7 @@ fn event_name(pid: u32) -> Vec<u16> {
         .collect()
 }
 
-/// 该进程是否已被注入（通过能否打开卸载事件判断）。
+/// Whether this process is currently protected, detected through the unload event.
 pub fn is_protected(pid: u32) -> bool {
     let name = event_name(pid);
     unsafe {
@@ -46,28 +46,29 @@ pub fn is_protected(pid: u32) -> bool {
     }
 }
 
-/// 请求解除：触发卸载事件，DLL 会还原窗口并自卸载。
+/// Request unprotect by signaling the unload event.
 pub fn request_unprotect(pid: u32) -> Result<(), String> {
     let name = event_name(pid);
     unsafe {
-        let h = OpenEventW(EVENT_MODIFY_STATE, FALSE, PCWSTR(name.as_ptr()))
-            .map_err(|e| format!("打开卸载事件失败（可能未注入）: {e}"))?;
+        let h = OpenEventW(EVENT_MODIFY_STATE, FALSE, PCWSTR(name.as_ptr())).map_err(|e| {
+            format!("failed to open unload event; process may not be protected: {e}")
+        })?;
         let r = SetEvent(h);
         let _ = CloseHandle(h);
-        r.map_err(|e| format!("触发卸载事件失败: {e}"))
+        r.map_err(|e| format!("failed to signal unload event: {e}"))
     }
 }
 
-/// 注入 protect_dll.dll 到指定进程。
+/// Inject protect_dll.dll into the target process.
 pub fn inject(pid: u32, dll_path: &Path) -> Result<(), String> {
     let dll_abs = dll_path
         .canonicalize()
-        .map_err(|e| format!("解析 DLL 路径失败: {e}"))?;
+        .map_err(|e| format!("failed to resolve DLL path: {e}"))?;
     let dll_str = dll_abs.to_string_lossy().to_string();
 
     unsafe {
         let process = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid)
-            .map_err(|e| format!("OpenProcess 失败: {e}"))?;
+            .map_err(|e| format!("OpenProcess failed: {e}"))?;
 
         let mut wide: Vec<u16> = dll_str.encode_utf16().chain(std::iter::once(0)).collect();
         let byte_len = wide.len() * 2;
@@ -81,7 +82,7 @@ pub fn inject(pid: u32, dll_path: &Path) -> Result<(), String> {
         );
         if remote_mem.is_null() {
             let _ = CloseHandle(process);
-            return Err("VirtualAllocEx 失败".into());
+            return Err("VirtualAllocEx failed".into());
         }
 
         let write_ok = WriteProcessMemory(
@@ -94,11 +95,11 @@ pub fn inject(pid: u32, dll_path: &Path) -> Result<(), String> {
         if write_ok.is_err() {
             let _ = VirtualFreeEx(process, remote_mem, 0, MEM_RELEASE);
             let _ = CloseHandle(process);
-            return Err("WriteProcessMemory 失败".into());
+            return Err("WriteProcessMemory failed".into());
         }
 
         let load_library =
-            get_proc("kernel32.dll", "LoadLibraryW").ok_or("无法定位 LoadLibraryW")?;
+            get_proc("kernel32.dll", "LoadLibraryW").ok_or("failed to locate LoadLibraryW")?;
         let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<
             *const core::ffi::c_void,
             unsafe extern "system" fn(*mut core::ffi::c_void) -> u32,
@@ -108,7 +109,7 @@ pub fn inject(pid: u32, dll_path: &Path) -> Result<(), String> {
             .map_err(|e| {
                 let _ = VirtualFreeEx(process, remote_mem, 0, MEM_RELEASE);
                 let _ = CloseHandle(process);
-                format!("CreateRemoteThread 失败: {e}")
+                format!("CreateRemoteThread failed: {e}")
             })?;
 
         let _ = WaitForSingleObject(thread, 10_000);
@@ -119,7 +120,7 @@ pub fn inject(pid: u32, dll_path: &Path) -> Result<(), String> {
     }
 }
 
-/// 取本进程中 module!func 的地址（系统 DLL 各进程同址）。
+/// Resolve module!func in this process. System DLLs are mapped consistently.
 unsafe fn get_proc(module: &str, func: &str) -> Option<*const core::ffi::c_void> {
     let m: Vec<u16> = module.encode_utf16().chain(std::iter::once(0)).collect();
     let f: Vec<u8> = func.bytes().chain(std::iter::once(0)).collect();
@@ -127,12 +128,12 @@ unsafe fn get_proc(module: &str, func: &str) -> Option<*const core::ffi::c_void>
     GetProcAddress(hmod, windows::core::PCSTR(f.as_ptr())).map(|p| p as *const core::ffi::c_void)
 }
 
-/// 校验防护是否真的生效：跨进程读取目标可见顶层窗口的截屏排除属性。
+/// Check whether protection actually took effect by reading target window affinity.
 ///
-/// `GetWindowDisplayAffinity` 可读任意窗口（无需拥有），用它确认 DLL 是否把窗口
-/// 设成了 `WDA_EXCLUDEFROMCAPTURE`。返回 `(已排除窗口数, 可见顶层窗口总数)`：
-/// 若总数 > 0 而已排除数为 0，多半是注入没成功或目标窗口属于别的进程（如 UWP 的
-/// ApplicationFrameHost）。主要用于自检与排障。
+/// `GetWindowDisplayAffinity` can read other processes' windows. The result is
+/// `(excluded visible top-level windows, total visible top-level windows)`.
+/// If total > 0 but excluded == 0, injection may have failed or the visible
+/// window may belong to another process such as UWP ApplicationFrameHost.
 pub fn protected_window_stats(pid: u32) -> (u32, u32) {
     struct Ctx {
         pid: u32,

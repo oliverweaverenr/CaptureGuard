@@ -1,11 +1,11 @@
-//! CaptureGuard —— 截屏防护工具（GUI）。
+//! CaptureGuard GUI.
 //!
-//! 选择一个有窗口的进程，点击"开启防护"，把它的窗口设为截屏排除
-//! （任何截屏/录屏都拍不到，自己看正常）。注入后可关闭本程序，防护持续生效；
-//! 下次打开本程序可对已注入的进程"解除防护"。
+//! Select a windowed process, enable capture protection, and keep protection
+//! active after the GUI closes. Reopen the GUI later to disable protection.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod i18n;
 mod inject;
 mod proc;
 mod selfprotect;
@@ -15,71 +15,78 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
+use i18n::Language;
 use proc::ProcEntry;
 
 fn main() -> eframe::Result<()> {
-    // 隐藏自检入口：--selftest <pid>，无界面跑 注入→检测→解除，用于验证单文件释放注入链路。
+    let lang = Language::detect();
+
+    // Hidden self-test entry for the single-file extraction/injection path.
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 3 && args[1] == "--selftest" {
-        run_selftest(&args[2]);
+        run_selftest(&args[2], lang);
         return Ok(());
     }
 
+    let title = lang.window_title();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([560.0, 460.0])
             .with_min_inner_size([420.0, 320.0])
-            .with_title("CaptureGuard 截屏防护"),
+            .with_title(title),
         ..Default::default()
     };
     eframe::run_native(
-        "CaptureGuard 截屏防护",
+        title,
         options,
         Box::new(|cc| {
             install_cjk_font(&cc.egui_ctx);
-            Ok(Box::new(App::new()))
+            Ok(Box::new(App::new(lang)))
         }),
     )
 }
 
-/// 无界面自检：用生产路径（释放内嵌 DLL）跑完整注入握手。
-fn run_selftest(pid_str: &str) {
-    let pid: u32 = pid_str.parse().expect("pid 必须是数字");
+/// Headless self-test for the production DLL extraction and injection path.
+fn run_selftest(pid_str: &str, lang: Language) {
+    let pid: u32 = pid_str.parse().expect(lang.selftest_invalid_pid());
     let dll = match locate_dll() {
         Ok(p) => p,
         Err(e) => {
-            println!("释放内嵌 DLL 失败: {e}");
+            println!("{}", lang.selftest_extract_failed(&e));
             return;
         }
     };
-    println!("内嵌 DLL 已释放到: {}", dll.display());
-    println!("注入前 is_protected = {}", inject::is_protected(pid));
+    println!("{}", lang.selftest_extracted_to(&dll.display().to_string()));
+    println!("before is_protected = {}", inject::is_protected(pid));
     match inject::inject(pid, &dll) {
-        Ok(()) => println!("注入成功"),
+        Ok(()) => println!("{}", lang.selftest_inject_success()),
         Err(e) => {
-            println!("注入失败: {e}");
+            println!("{}", lang.selftest_inject_failed(&e));
             return;
         }
     }
     std::thread::sleep(std::time::Duration::from_millis(800));
-    println!("注入后 is_protected = {}", inject::is_protected(pid));
+    println!("after inject is_protected = {}", inject::is_protected(pid));
     let (excluded, total) = inject::protected_window_stats(pid);
-    println!("窗口校验：{excluded}/{total} 个可见顶层窗口已设为截屏排除");
+    println!("{}", lang.selftest_window_stats(excluded, total));
     if total > 0 && excluded == 0 {
-        println!("⚠ 注入似乎未生效（可能被拦截，或目标窗口属于其它进程，如 UWP 的 ApplicationFrameHost）");
+        println!("⚠ {}", lang.selftest_no_effect());
     }
     match inject::request_unprotect(pid) {
-        Ok(()) => println!("已请求解除"),
-        Err(e) => println!("解除失败: {e}"),
+        Ok(()) => println!("{}", lang.selftest_unprotect_requested()),
+        Err(e) => println!("{}", lang.selftest_unprotect_failed(&e)),
     }
     std::thread::sleep(std::time::Duration::from_millis(1200));
-    println!("解除后 is_protected = {}", inject::is_protected(pid));
+    println!(
+        "after unprotect is_protected = {}",
+        inject::is_protected(pid)
+    );
 }
 
-/// 加载系统中文字体，否则中文显示为方块。
+/// Load a system CJK font so localized text and process titles render correctly.
 fn install_cjk_font(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    // 优先微软雅黑，退化到黑体。
+    // Prefer Microsoft YaHei, then fall back to common Chinese fonts.
     let candidates = [
         r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\msyh.ttf",
@@ -108,29 +115,31 @@ fn install_cjk_font(ctx: &egui::Context) {
 }
 
 struct App {
+    lang: Language,
     procs: Vec<ProcEntry>,
-    /// 各进程是否已注入：与 procs 同序。
+    /// Protection state aligned with `procs`.
     protected: Vec<bool>,
     selected: Option<usize>,
     status: String,
     last_refresh: Instant,
     dll_path: Option<PathBuf>,
     dll_err: Option<String>,
-    /// 是否把本程序自己的窗口也从截屏排除（默认关）。
+    /// Whether CaptureGuard's own window should be excluded from capture.
     self_protected: bool,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(lang: Language) -> Self {
         let (dll_path, dll_err) = match locate_dll() {
             Ok(p) => (Some(p), None),
             Err(e) => (None, Some(e)),
         };
         let mut app = App {
+            lang,
             procs: Vec::new(),
             protected: Vec::new(),
             selected: None,
-            status: "选择一个进程，点击开启防护。".into(),
+            status: lang.initial_status().into(),
             last_refresh: Instant::now(),
             dll_path,
             dll_err,
@@ -140,7 +149,7 @@ impl App {
         app
     }
 
-    /// 重新枚举进程并刷新注入状态。
+    /// Re-enumerate processes and refresh protection state.
     fn refresh(&mut self) {
         let prev_pid = self.selected.and_then(|i| self.procs.get(i)).map(|p| p.pid);
         self.procs = proc::list_windowed_processes();
@@ -149,7 +158,7 @@ impl App {
             .iter()
             .map(|p| inject::is_protected(p.pid))
             .collect();
-        // 尽量保持原选中项。
+        // Preserve the previous selection when possible.
         self.selected = prev_pid.and_then(|pid| self.procs.iter().position(|p| p.pid == pid));
         self.last_refresh = Instant::now();
     }
@@ -166,10 +175,10 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // 每帧确保本程序自己的窗口按当前开关设置截屏排除（开销极小）。
+        // Keep self-protection aligned with the current toggle.
         selfprotect::set_self_protected(self.self_protected);
 
-        // 每 2 秒自动刷新注入状态（捕捉外部变化、目标退出等）。
+        // Refresh protection state every 2 seconds to catch external changes.
         if self.last_refresh.elapsed() > Duration::from_secs(2) {
             self.refresh_protection_only();
             ctx.request_repaint_after(Duration::from_secs(2));
@@ -178,23 +187,19 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.heading("截屏防护");
+                ui.heading(self.lang.heading());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("🔄 刷新列表").clicked() {
+                    if ui
+                        .button(format!("🔄 {}", self.lang.refresh_button()))
+                        .clicked()
+                    {
                         self.refresh();
-                        self.status = "已刷新进程列表。".into();
+                        self.status = self.lang.refreshed_status().into();
                     }
-                    ui.checkbox(&mut self.self_protected, "隐藏本窗口");
+                    ui.checkbox(&mut self.self_protected, self.lang.hide_self_checkbox());
                 });
             });
-            ui.label(
-                egui::RichText::new(
-                    "对选中进程开启防护后，其窗口在截屏/录屏中将被排除（你自己看正常）。\
-                     注入后可关闭本程序，防护持续生效。",
-                )
-                .small()
-                .weak(),
-            );
+            ui.label(egui::RichText::new(self.lang.description()).small().weak());
             ui.add_space(6.0);
         });
 
@@ -213,7 +218,10 @@ impl eframe::App for App {
                 let can_act = sel.is_some() && self.dll_path.is_some();
 
                 if ui
-                    .add_enabled(can_act && !is_prot, egui::Button::new("🛡 开启防护"))
+                    .add_enabled(
+                        can_act && !is_prot,
+                        egui::Button::new(format!("🛡 {}", self.lang.protect_button())),
+                    )
                     .clicked()
                 {
                     if let Some(p) = &sel {
@@ -221,7 +229,10 @@ impl eframe::App for App {
                     }
                 }
                 if ui
-                    .add_enabled(can_act && is_prot, egui::Button::new("✖ 解除防护"))
+                    .add_enabled(
+                        can_act && is_prot,
+                        egui::Button::new(format!("✖ {}", self.lang.unprotect_button())),
+                    )
                     .clicked()
                 {
                     if let Some(p) = &sel {
@@ -237,7 +248,7 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if self.procs.is_empty() {
-                    ui.label("未发现有窗口的进程。");
+                    ui.label(self.lang.no_processes());
                     return;
                 }
                 let protected = self.protected.clone();
@@ -246,7 +257,10 @@ impl eframe::App for App {
                     let selected = self.selected == Some(i);
 
                     let label = format!("{}  (PID {})", p.name, p.pid);
-                    let resp = ui.selectable_label(selected, build_row(&label, &p.title, is_prot));
+                    let resp = ui.selectable_label(
+                        selected,
+                        build_row(self.lang, &label, &p.title, is_prot),
+                    );
                     if resp.clicked() {
                         self.selected = Some(i);
                     }
@@ -259,28 +273,23 @@ impl eframe::App for App {
 impl App {
     fn do_protect(&mut self, pid: u32, name: &str) {
         let Some(dll) = self.dll_path.clone() else {
-            self.status = "防护组件不可用。".into();
+            self.status = self.lang.component_unavailable().into();
             return;
         };
         match inject::inject(pid, &dll) {
             Ok(()) => {
-                // 注入后回读校验：确认窗口确实被设为截屏排除。
+                // Read back window state after injection to catch blocked attempts.
                 std::thread::sleep(Duration::from_millis(300));
                 let (excluded, total) = inject::protected_window_stats(pid);
                 if total > 0 && excluded == 0 {
-                    self.status = format!(
-                        "已注入 {name}，但未检测到窗口被排除——可能被杀软拦截，\
-                         或其窗口属于其它进程（如 UWP/部分浏览器）。录屏可能仍可见。"
-                    );
+                    self.status = self.lang.injected_but_not_excluded(name);
                 } else {
-                    self.status = format!(
-                        "已对 {name} (PID {pid}) 开启防护（{excluded}/{total} 窗口已排除）。"
-                    );
+                    self.status = self.lang.protect_success(name, pid, excluded, total);
                 }
                 self.refresh_protection_only();
             }
             Err(e) => {
-                self.status = format!("开启失败：{e}（可能需管理员权限或被杀软拦截）");
+                self.status = self.lang.protect_failed(&e);
             }
         }
     }
@@ -288,57 +297,57 @@ impl App {
     fn do_unprotect(&mut self, pid: u32, name: &str) {
         match inject::request_unprotect(pid) {
             Ok(()) => {
-                self.status = format!("已请求解除 {name} (PID {pid}) 的防护。");
-                // DLL 自卸载需要一点时间，稍后刷新状态。
+                self.status = self.lang.unprotect_requested(name, pid);
+                // DLL self-unload takes a moment; refresh shortly after.
                 std::thread::sleep(Duration::from_millis(300));
                 self.refresh_protection_only();
             }
             Err(e) => {
-                self.status = format!("解除失败：{e}");
+                self.status = self.lang.unprotect_failed(&e);
             }
         }
     }
 }
 
-/// 拼一行展示文本：名称 + 状态标记 + 标题。
-fn build_row(label: &str, title: &str, protected: bool) -> String {
+/// Build a process-list row: protection mark + process label + window title.
+fn build_row(lang: Language, label: &str, title: &str, protected: bool) -> String {
     let mark = if protected {
-        "🛡 已防护"
+        format!("🛡 {}", lang.protected_mark())
     } else {
-        "　未防护"
+        format!("  {}", lang.unprotected_mark())
     };
     let title = if title.is_empty() {
         String::new()
     } else {
-        format!("  —  {title}")
+        format!("  -  {title}")
     };
     format!("{mark}   {label}{title}")
 }
 
-/// 把内嵌的 protect_dll.dll 释放到临时目录，返回其路径。
+/// Extract the embedded protect DLL to the temp directory and return its path.
 ///
-/// 注入需要磁盘上的真实 DLL 文件（LoadLibraryW 收路径），无法纯内存注入，
-/// 所以单文件分发时运行期把内嵌字节写到 %TEMP%。按内容大小命名，避免重复写。
+/// LoadLibraryW requires a real file path, so the single-file executable writes
+/// the embedded bytes to %TEMP%. The file name includes the payload size to avoid
+/// unnecessary rewrites.
 fn locate_dll() -> Result<PathBuf, String> {
     const DLL_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.bin"));
 
     let dir = std::env::temp_dir().join(obfstr::obfstr!("winsvc-cache"));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建临时目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp directory: {e}"))?;
 
-    // 文件名带字节长度，DLL 更新后文件名变化，自然覆盖旧版本逻辑。
-    // 名字也混淆，落地文件不暴露用途。
+    // The size suffix changes when the DLL changes, naturally selecting a new file.
     let path = dir.join(format!("{}{}.dat", obfstr::obfstr!("ws_"), DLL_BYTES.len()));
 
-    // 已存在且大小一致就复用（可能正被某进程加载锁定，无需重写）。
+    // Reuse an existing file when possible; loaded DLL files may be locked.
     let need_write = match std::fs::metadata(&path) {
         Ok(m) => m.len() != DLL_BYTES.len() as u64,
         Err(_) => true,
     };
     if need_write {
         if let Err(e) = std::fs::write(&path, DLL_BYTES) {
-            // 写失败大概率是旧文件被占用；若已存在就继续用旧的。
+            // If writing fails but the file exists, it is likely locked by a target.
             if !path.exists() {
-                return Err(format!("释放防护组件失败: {e}"));
+                return Err(format!("Failed to extract protection component: {e}"));
             }
         }
     }

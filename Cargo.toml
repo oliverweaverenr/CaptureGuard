@@ -5,7 +5,7 @@ default-members = ["gui"]
 
 [workspace.package]
 edition = "2021"
-version = "0.2.0"
+version = "0.2.1"
 rust-version = "1.80"
 license = "MIT"
 repository = "https://github.com/oliverweaverenr/CaptureGuard"

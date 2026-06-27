@@ -1,99 +1,108 @@
-# 架构说明
+# Architecture
 
-CaptureGuard 由两个 Rust crate 组成：
+CaptureGuard is composed of two Rust crates:
 
 ```text
 capture-guard workspace
 ├── gui
-│   ├── main.rs          # GUI 状态、交互和自检入口
-│   ├── proc.rs          # 枚举拥有可见主窗口的进程
-│   ├── inject.rs        # DLL 注入、状态检测和解除防护
-│   ├── selfprotect.rs   # CaptureGuard 自身窗口防护
-│   └── build.rs         # 编译并嵌入 protect-dll
+│   ├── main.rs          # GUI state, interaction, and self-test entry
+│   ├── proc.rs          # process enumeration for visible main windows
+│   ├── inject.rs        # DLL injection, status checks, and unprotect requests
+│   ├── selfprotect.rs   # optional protection for CaptureGuard's own window
+│   └── build.rs         # builds and embeds protect-dll
 └── protect-dll
-    └── lib.rs           # 目标进程内的窗口防护和自卸载逻辑
+    └── lib.rs           # target-process window protection and self-unload logic
 ```
 
 
-## 核心流程
+## Core Flow
 
 ```text
-[GUI 进程]
-  ├── 枚举可见窗口进程
-  ├── 释放内嵌 DLL 到临时目录
+[GUI process]
+  ├── Enumerate processes with visible windows
+  ├── Extract embedded DLL to the temp directory
   ├── OpenProcess + VirtualAllocEx + WriteProcessMemory
   └── CreateRemoteThread(LoadLibraryW)
              │
              ▼
-[目标进程]
-  ├── 加载 protect-dll
-  ├── 创建 Local\CaptureGuardUnload_<PID> 事件
-  ├── 后台线程每 250ms 刷新窗口 affinity
-  └── 收到卸载事件后还原窗口并 FreeLibraryAndExitThread
+[Target process]
+  ├── Load protect-dll
+  ├── Create Local\CaptureGuardUnload_<PID> event
+  ├── Refresh window affinity every 250 ms
+  └── Restore windows and call FreeLibraryAndExitThread on unload event
 ```
 
 
-## 进程枚举
+## Process Enumeration
 
-`gui/src/proc.rs` 使用 `EnumWindows` 遍历顶层窗口，并过滤：
+`gui/src/proc.rs` uses `EnumWindows` to enumerate top-level windows and filters
+out:
 
-- 不可见窗口。
-- 工具窗口。
-- 有 owner 的弹窗。
-- 无标题窗口。
+- Invisible windows.
+- Tool windows.
+- Owned popups.
+- Untitled windows.
 
-随后通过 `CreateToolhelp32Snapshot` 补全进程名，并按进程名排序展示。
+It then uses `CreateToolhelp32Snapshot` to resolve process names and sorts the
+list for display.
 
 
-## 注入与状态检测
+## Injection And Status Checks
 
-`gui/src/inject.rs` 使用经典 `LoadLibraryW` 远程线程注入：
+`gui/src/inject.rs` uses classic `LoadLibraryW` remote-thread injection:
 
-1. 打开目标进程。
-2. 在目标进程分配内存。
-3. 写入 DLL 路径。
-4. 创建远程线程调用 `LoadLibraryW`。
-5. 释放远程内存并关闭句柄。
+1. Open the target process.
+2. Allocate memory in the target process.
+3. Write the DLL path into target memory.
+4. Create a remote thread that calls `LoadLibraryW`.
+5. Free the remote memory and close handles.
 
-状态检测不扫描模块列表，而是尝试打开目标 DLL 创建的命名事件：
+Status detection does not scan module lists. Instead, the GUI tries to open the
+named event created by the target DLL:
 
 ```text
 Local\CaptureGuardUnload_<PID>
 ```
 
-能打开事件说明 DLL 正在目标进程内运行。
+If the event can be opened, the DLL is running inside the target process.
 
 
-## 窗口防护
+## Window Protection
 
-`protect-dll/src/lib.rs` 在目标进程内调用：
+`protect-dll/src/lib.rs` calls this API from inside the target process:
 
 ```text
 SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
 ```
 
-它会同时处理目标进程拥有的可见顶层窗口和子窗口。这样可以覆盖 Chromium/CEF、Qt、
-游戏窗口等常见“内容在子窗口绘制”的情况。
+The DLL applies the setting to visible top-level windows owned by the target
+process and recursively to their child windows. This covers common UI stacks
+where actual content is rendered in child windows, such as Chromium/CEF, Qt, and
+some games.
 
-在不支持 `WDA_EXCLUDEFROMCAPTURE` 的系统上，会退化为 `WDA_MONITOR`。
-
-
-## 自维持与解除
-
-DLL 加载后启动一个后台线程。该线程每 250ms 刷新一次窗口防护，以覆盖新建窗口、
-弹窗和延迟创建的渲染表面。
-
-GUI 关闭不会影响目标进程内的后台线程。需要解除时，GUI 触发命名事件，DLL 会：
-
-1. 将目标窗口恢复为 `WDA_NONE`。
-2. 关闭命名事件句柄。
-3. 调用 `FreeLibraryAndExitThread` 自卸载。
+On systems that do not support `WDA_EXCLUDEFROMCAPTURE`, the DLL falls back to
+`WDA_MONITOR`.
 
 
-## 构建方式
+## Persistence And Unload
 
-Release 构建时，`gui/build.rs` 会独立编译 `protect-dll`，并将生成的 DLL 复制为
-`payload.bin` 嵌入 GUI 可执行文件。
+After loading, the DLL starts a worker thread. The thread refreshes window
+protection every 250 ms to cover newly created windows, popups, and delayed
+rendering surfaces.
 
-运行时，GUI 将内嵌字节释放到用户临时目录。因为 `LoadLibraryW` 需要真实文件路径，
-这里不能直接使用纯内存字节完成加载。
+Closing the GUI does not affect the worker thread inside the target process. To
+disable protection, the GUI signals the named event. The DLL then:
+
+1. Restores target windows to `WDA_NONE`.
+2. Closes the named event handle.
+3. Calls `FreeLibraryAndExitThread` to unload itself.
+
+
+## Build Model
+
+During release builds, `gui/build.rs` builds `protect-dll` separately and copies
+the DLL output to `payload.bin`, which is embedded into the GUI executable.
+
+At runtime, the GUI extracts the embedded bytes to the user temp directory.
+`LoadLibraryW` requires a real file path, so this project does not attempt
+memory-only loading.

@@ -1,39 +1,43 @@
-# 安全策略
+# Security Policy
 
-CaptureGuard 是一个双重用途工具。项目维护重点是合法授权场景下的窗口隐私保护，
-不会支持绕过合规监管、监考、DRM、EDR 或其他第三方保护机制。
-
-
-## 支持范围
-
-当前仅维护最新代码和 GitHub Releases 中的最新版本。
-
-如果你报告的问题涉及旧版本，请先确认最新版本是否仍可复现。
+CaptureGuard is a dual-use tool. The project focuses on privacy protection for
+owned or authorized devices and does not support bypassing compliance controls,
+exam monitoring, DRM, EDR, or other third-party protections.
 
 
-## 报告安全问题
+## Supported Versions
 
-请通过 GitHub Security Advisory 私下报告安全问题。报告中请包含：
+Only the latest code and the latest GitHub Release are actively maintained.
 
-- 影响版本或提交。
-- 复现步骤。
-- 预期影响。
-- 你已经验证过的环境信息。
-
-请不要在公开 issue 中披露可直接滥用的漏洞细节。
+If you report an issue affecting an older version, please confirm whether it
+still reproduces on the latest version.
 
 
-## 负责任披露
+## Reporting A Vulnerability
 
-维护者会尽快确认报告并评估影响。修复完成后，会在 release note 或安全公告中说明
-影响范围和升级建议。
+Please report security issues privately through GitHub Security Advisories.
+Include:
+
+- Affected version or commit.
+- Reproduction steps.
+- Expected impact.
+- Verified environment details.
+
+Do not disclose directly reusable exploit details in public issues.
 
 
-## 明确不支持
+## Responsible Disclosure
 
-以下请求不属于安全问题处理范围：
+Maintainers will confirm reports and assess impact as soon as practical. After a
+fix is available, the release notes or advisory will describe the impact and
+upgrade guidance.
 
-- 如何绕过安全软件或系统保护。
-- 如何隐藏注入行为或规避检测。
-- 如何突破第三方应用的自我保护。
-- 如何用于未授权设备或违反服务条款的场景。
+
+## Out Of Scope
+
+The following requests are not handled as security issues:
+
+- How to bypass security software or system protection.
+- How to hide injection behavior or evade detection.
+- How to defeat third-party self-protection.
+- How to use CaptureGuard on unauthorized devices or in violation of terms.

@@ -1,14 +1,14 @@
-## 变更内容
+## Changes
 
 - 
 
-## 验证结果
+## Verification
 
 - [ ] `cargo fmt --all -- --check`
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `cargo build --release --bin capture-guard`
 
-## 风险说明
+## Risk
 
-- 影响范围：
-- 回滚方式：
+- Impact:
+- Rollback:

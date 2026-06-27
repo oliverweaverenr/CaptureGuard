@@ -1,7 +1,8 @@
-//! 让本程序自己的窗口也从截屏中排除——反截屏工具自己当然不该出现在截图里。
+//! Optional capture exclusion for CaptureGuard's own window.
 //!
-//! 本进程直接对自己的窗口调用 SetWindowDisplayAffinity，无需注入。
-//! 每帧调用一次（开销极小），可覆盖启动后才创建的窗口。
+//! This process can call SetWindowDisplayAffinity on its own windows directly,
+//! without injection. The call is repeated every frame to cover late-created
+//! windows.
 
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::System::Threading::GetCurrentProcessId;
@@ -14,7 +15,7 @@ thread_local! {
     static AFFINITY: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
-/// 设置本进程所有可见顶层窗口是否从截屏排除。
+/// Set whether all visible top-level windows in this process are capture-excluded.
 pub fn set_self_protected(protected: bool) {
     let aff = if protected {
         WDA_EXCLUDEFROMCAPTURE.0
