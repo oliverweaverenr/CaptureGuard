@@ -48,7 +48,9 @@ fn main() -> eframe::Result<()> {
 
 /// Headless self-test for the production DLL extraction and injection path.
 fn run_selftest(pid_str: &str, lang: Language) {
-    let pid: u32 = pid_str.parse().expect(lang.selftest_invalid_pid());
+    let pid: u32 = pid_str
+        .parse()
+        .unwrap_or_else(|_| panic!("{}", lang.selftest_invalid_pid()));
     let dll = match locate_dll() {
         Ok(p) => p,
         Err(e) => {
