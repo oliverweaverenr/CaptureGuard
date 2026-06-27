@@ -1,5 +1,9 @@
 # CaptureGuard
 
+<p align="center">
+  <img src="docs/logo.png" alt="CaptureGuard logo" width="128">
+</p>
+
 [![CI](https://github.com/oliverweaverenr/CaptureGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverweaverenr/CaptureGuard/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/oliverweaverenr/CaptureGuard?include_prereleases)](https://github.com/oliverweaverenr/CaptureGuard/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -19,9 +23,9 @@ GUI if desired, and reopen it later to inspect state or disable protection.
 > copyright protection, or any third-party terms or legal restrictions.
 
 
-## Screenshot
+## Overview
 
-![CaptureGuard screenshot](docs/image.png)
+![CaptureGuard overview](docs/banner_en.png)
 
 
 ## Features
@@ -158,6 +162,17 @@ See [Release Process](docs/release.md) for release steps.
 - On systems older than Windows 10 version 2004, `WDA_EXCLUDEFROMCAPTURE` is not
   available. CaptureGuard falls back to `WDA_MONITOR`, which typically shows a
   black rectangle instead of fully excluding the window.
+
+
+## Community Support
+
+- Community discussion and support: [Linux.do](https://linux.do/).
+
+
+## AI Collaboration
+
+This project was completed with assistance from Codex GPT5.5 and Claude Code
+Opus 4.8.
 
 
 ## Contributing

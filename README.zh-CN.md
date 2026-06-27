@@ -1,5 +1,9 @@
 # CaptureGuard
 
+<p align="center">
+  <img src="docs/logo.png" alt="CaptureGuard 标识" width="128">
+</p>
+
 [![CI](https://github.com/oliverweaverenr/CaptureGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverweaverenr/CaptureGuard/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/oliverweaverenr/CaptureGuard?include_prereleases)](https://github.com/oliverweaverenr/CaptureGuard/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,9 +21,10 @@ GUI 可以查看状态并解除防护。
 > 数字版权管理或任何违反法律法规及第三方服务条款的场景。
 
 
-## 界面截图
+## 项目概览
 
-![CaptureGuard 界面截图](docs/image.png)
+![CaptureGuard 项目概览](docs/banner_cn.png)
+
 
 
 ## 功能特性
@@ -141,6 +146,16 @@ cargo build --release --bin capture-guard
   `ApplicationFrameHost.exe` 或多进程浏览器，需要选择真正持有窗口的进程。
 - Windows 10 2004 之前的系统不支持 `WDA_EXCLUDEFROMCAPTURE`，会退化为
   `WDA_MONITOR`，截图中通常表现为黑块而不是完全消失。
+
+
+## 社区支持
+
+- 社区讨论与支持：[Linux.do](https://linux.do/)。
+
+
+## AI 协作
+
+本项目由 Codex GPT5.5 与 Claude Code Opus 4.8 协作完成。
 
 
 ## 贡献
