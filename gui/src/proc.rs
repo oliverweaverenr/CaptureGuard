@@ -43,7 +43,7 @@ pub fn list_windowed_processes() -> Vec<ProcEntry> {
             title,
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|entry| entry.name.to_lowercase());
     out
 }
 
