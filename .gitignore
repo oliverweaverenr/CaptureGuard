@@ -1,0 +1,32 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Local editor and OS files
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+dist/
+
+# Local environment files
+.env
+.env.*
+
+# Windows build outputs that should be released through artifacts, not source
+*.exe
+*.dll
+*.pdb
+*.lib
+*.exp
+*.msi
+*.zip

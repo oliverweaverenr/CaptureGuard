@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["protect-dll", "gui"]
+default-members = ["gui"]
+
+[workspace.package]
+edition = "2021"
+version = "0.2.0"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/oliverweaverenr/CaptureGuard"
+
+[workspace.metadata.capture-guard]
+name = "CaptureGuard"
+supported-target = "x86_64-pc-windows-msvc"
+release-binary = "capture-guard"
+
+# 体积优化：LTO + 单元化代码生成 + 去符号 + 优化体积。
+# 注意：不用 panic="abort"。protect-dll 注入在宿主进程内运行，
+# abort 会连带结束宿主进程，保留 unwind 更稳妥。
+[profile.release]
+opt-level = "z"     # 优化体积
+lto = true          # 链接期优化，跨 crate 内联与去冗余
+codegen-units = 1   # 牺牲编译并行换更小更快的产物
+strip = true        # 去掉符号表

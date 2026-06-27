@@ -1,0 +1,26 @@
+name: Feature request
+description: 提出功能建议
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 背景问题
+      description: 这个功能想解决什么实际问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 方案建议
+      description: 你希望它如何工作？
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 使用边界
+      description: 请说明这是合法授权场景，不涉及绕过监管、监考、DRM、EDR 或第三方保护。
+    validations:
+      required: true

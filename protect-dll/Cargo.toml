@@ -1,0 +1,27 @@
+[package]
+name = "protect-dll"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Injected window capture-exclusion DLL for CaptureGuard."
+publish = false
+
+[lib]
+name = "wsvc"
+crate-type = ["cdylib"]
+
+[dependencies]
+obfstr = "0.4"
+
+[dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+]
